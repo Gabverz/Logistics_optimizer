@@ -2,19 +2,22 @@ name: Logistics ETL Pipeline
 
 on:
   schedule:
-    - cron: '0 0 * * 1'
+    - cron: '0 0 1 * *'  
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  
 jobs:
   etl_pipeline:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout do código
-        uses: actions/checkout@v4        # ← atualizado
+        uses: actions/checkout@v4       
 
       - name: Configurar Python
-        uses: actions/setup-python@v5    # ← atualizado
+        uses: actions/setup-python@v5    
         with:
           python-version: '3.11'
 
@@ -30,7 +33,7 @@ jobs:
         run: python main_etl.py
 
       - name: Salvar parquet como artefato
-        uses: actions/upload-artifact@v4  # ← já estava ok
+        uses: actions/upload-artifact@v4  
         with:
           name: base-consolidada-logistica
           path: base_consolidada_logistica.parquet
