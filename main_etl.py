@@ -65,18 +65,65 @@ def extrair_dados(api, path='./data'):
 # =============================================================================
 # 3. TRANSFORMAÇÃO (Transform)
 # =============================================================================
-def processar_base_mestre(path='./data'):
-    # Carregando as tabelas essenciais
-    print("Carregando CSVs...")
-    orders    = pd.read_csv(f'{path}/olist_orders_dataset.csv')
-    items     = pd.read_csv(f'{path}/olist_order_items_dataset.csv')
-    reviews   = pd.read_csv(f'{path}/olist_order_reviews_dataset.csv')
-    customers = pd.read_csv(f'{path}/olist_customers_dataset.csv')
 
-    print(f"  orders:    {orders.shape[0]} linhas")
-    print(f"  items:     {items.shape[0]} linhas")
-    print(f"  reviews:   {reviews.shape[0]} linhas")
-    print(f"  customers: {customers.shape[0]} linhas")
+def processar_base_mestre(path='./data'):
+    # Load essential tables
+    print("Carregando CSVs...")
+    orders      = pd.read_csv(f'{path}/olist_orders_dataset.csv')
+    items       = pd.read_csv(f'{path}/olist_order_items_dataset.csv')
+    reviews     = pd.read_csv(f'{path}/olist_order_reviews_dataset.csv')
+    customers   = pd.read_csv(f'{path}/olist_customers_dataset.csv')
+    sellers     = pd.read_csv(f'{path}/olist_sellers_dataset.csv')
+    products    = pd.read_csv(f'{path}/olist_products_dataset.csv')
+    payments    = pd.read_csv(f'{path}/olist_order_payments_dataset.csv')
+    geolocation = pd.read_csv(f'{path}/olist_geolocation_dataset.csv')
+
+    print(f"  orders:      {orders.shape[0]} linhas")
+    print(f"  items:       {items.shape[0]} linhas")
+    print(f"  reviews:     {reviews.shape[0]} linhas")
+    print(f"  customers:   {customers.shape[0]} linhas")
+    print(f"  sellers:     {sellers.shape[0]} linhas")
+    print(f"  products:    {products.shape[0]} linhas")
+    print(f"  payments:    {payments.shape[0]} linhas")
+    print(f"  geolocation: {geolocation.shape[0]} linhas")
+
+    # -------------------------------------------------------------------------
+    # Pre-processing: slim down tables before merging
+    # -------------------------------------------------------------------------
+
+    # Keep only relevant seller columns
+    sellers_slim = sellers[['seller_id', 'seller_zip_code_prefix']].drop_duplicates()
+
+    # Keep only relevant product columns
+    products_slim = products[[
+        'product_id',
+        'product_category_name',
+        'product_weight_g',
+        'product_length_cm',
+        'product_height_cm',
+        'product_width_cm'
+    ]].drop_duplicates()
+
+    # Aggregate payments: one row per order, dominant payment type
+    payments_agg = (
+        payments.groupby('order_id')['payment_type']
+        .agg(lambda x: x.value_counts().index[0])
+        .reset_index()
+        .rename(columns={'payment_type': 'payment_type_main'})
+    )
+
+    # Aggregate geolocation: average lat/lng per zip prefix (centroid)
+    geo_agg = (
+        geolocation
+        .groupby('geolocation_zip_code_prefix')
+        .agg(
+            geolocation_lat=('geolocation_lat', 'mean'),
+            geolocation_lng=('geolocation_lng', 'mean'),
+            geolocation_city=('geolocation_city', 'first'),
+            geolocation_state=('geolocation_state', 'first')
+        )
+        .reset_index()
+    )
 
     # -------------------------------------------------------------------------
     # Merges
@@ -84,21 +131,60 @@ def processar_base_mestre(path='./data'):
     print("\nIniciando Merges...")
 
     df = pd.merge(orders, items, on='order_id', how='inner')
-    print(f"  Após merge orders + items:     {df.shape[0]} linhas")
+    print(f"  Após merge orders + items:        {df.shape[0]} linhas")
 
     df = pd.merge(df, customers, on='customer_id', how='inner')
-    print(f"  Após merge + customers:        {df.shape[0]} linhas")
+    print(f"  Após merge + customers:           {df.shape[0]} linhas")
 
-    # Deduplica reviews antes do merge para evitar multiplicação de linhas
+    # Deduplicate reviews before merge to avoid row explosion
     reviews_dedup = (
         reviews[['order_id', 'review_comment_message', 'review_score']]
         .drop_duplicates(subset='order_id', keep='last')
     )
     df = pd.merge(df, reviews_dedup, on='order_id', how='left')
-    print(f"  Após merge + reviews:          {df.shape[0]} linhas")
+    print(f"  Após merge + reviews:             {df.shape[0]} linhas")
+
+    df = pd.merge(df, sellers_slim, on='seller_id', how='left')
+    print(f"  Após merge + sellers:             {df.shape[0]} linhas")
+
+    df = pd.merge(df, products_slim, on='product_id', how='left')
+    print(f"  Após merge + products:            {df.shape[0]} linhas")
+
+    df = pd.merge(df, payments_agg, on='order_id', how='left')
+    print(f"  Após merge + payments:            {df.shape[0]} linhas")
+
+    # Geolocation for seller zip prefix
+    df = pd.merge(
+        df,
+        geo_agg.rename(columns={
+            'geolocation_zip_code_prefix': 'seller_zip_code_prefix',
+            'geolocation_lat':             'seller_geo_lat',
+            'geolocation_lng':             'seller_geo_lng',
+            'geolocation_city':            'seller_geo_city',
+            'geolocation_state':           'seller_geo_state'
+        }),
+        on='seller_zip_code_prefix',
+        how='left'
+    )
+    print(f"  Após merge + geo (seller):        {df.shape[0]} linhas")
+
+    # Geolocation for customer zip prefix
+    df = pd.merge(
+        df,
+        geo_agg.rename(columns={
+            'geolocation_zip_code_prefix': 'customer_zip_code_prefix',
+            'geolocation_lat':             'customer_geo_lat',
+            'geolocation_lng':             'customer_geo_lng',
+            'geolocation_city':            'customer_geo_city',
+            'geolocation_state':           'customer_geo_state'
+        }),
+        on='customer_zip_code_prefix',
+        how='left'
+    )
+    print(f"  Após merge + geo (customer):      {df.shape[0]} linhas")
 
     # -------------------------------------------------------------------------
-    # Tratamento de datas
+    # Date parsing
     # -------------------------------------------------------------------------
     cols_data = [
         'order_purchase_timestamp',
@@ -109,16 +195,43 @@ def processar_base_mestre(path='./data'):
         df[col] = pd.to_datetime(df[col])
 
     # -------------------------------------------------------------------------
-    # Criação da variável-alvo (is_late)
+    # Target variable (is_late)
     # -------------------------------------------------------------------------
-    # Usa Int8 nullable para que pedidos sem data de entrega fiquem como NaN
-    # e não sejam classificados erroneamente como "no prazo"
+    # Uses nullable Int8 so orders without delivery date remain NaN
+    # and are not misclassified as on time
     df['is_late'] = (
         df['order_delivered_customer_date'] > df['order_estimated_delivery_date']
     ).astype('Int8')
 
-    # Pedidos sem data de entrega real → is_late = NaN (não classificável ainda)
+    # Orders without actual delivery date → is_late = NaN (not yet classifiable)
     df.loc[df['order_delivered_customer_date'].isna(), 'is_late'] = pd.NA
+
+    # -------------------------------------------------------------------------
+    # Validation: check expected columns are present after all merges
+    # -------------------------------------------------------------------------
+    expected_cols = [
+        'seller_zip_code_prefix',
+        'product_category_name',
+        'product_weight_g',
+        'product_length_cm',
+        'product_height_cm',
+        'product_width_cm',
+        'payment_type_main',
+        'seller_geo_lat',
+        'seller_geo_lng',
+        'seller_geo_city',
+        'seller_geo_state',
+        'customer_geo_lat',
+        'customer_geo_lng',
+        'customer_geo_city',
+        'customer_geo_state',
+    ]
+
+    missing_cols = [c for c in expected_cols if c not in df.columns]
+    if missing_cols:
+        print(f"\nWARNING: missing columns after merges: {missing_cols}")
+    else:
+        print("\nAll expected columns present after merges.")
 
     print(f"\nDataset consolidado com {df.shape[0]} linhas.")
     print(f"  Pedidos atrasados:     {df['is_late'].sum()}")
