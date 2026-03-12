@@ -1,64 +1,36 @@
 name: Logistics ETL Pipeline
 
-# =============================================================================
-# GATILHOS: quando o workflow será executado
-# =============================================================================
 on:
   schedule:
-    - cron: '0 0 * * 1'  # Toda segunda-feira à meia-noite (UTC)
-  workflow_dispatch:       # Permite execução manual pelo botão no GitHub
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
 
-# =============================================================================
-# JOBS: o que será executado
-# =============================================================================
 jobs:
   etl_pipeline:
-    runs-on: ubuntu-latest  # Servidor Linux gratuito do GitHub
+    runs-on: ubuntu-latest
 
     steps:
-      # -----------------------------------------------------------------------
-      # 1. Baixa o código do repositório para o servidor do GitHub
-      # -----------------------------------------------------------------------
       - name: Checkout do código
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4        # ← atualizado
 
-      # -----------------------------------------------------------------------
-      # 2. Instala o Python na versão definida
-      # -----------------------------------------------------------------------
       - name: Configurar Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5    # ← atualizado
         with:
           python-version: '3.11'
 
-      # -----------------------------------------------------------------------
-      # 3. Instala todas as dependências a partir do requirements.txt
-      #    (fonte única de verdade para dependências)
-      # -----------------------------------------------------------------------
       - name: Instalar dependências
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # -----------------------------------------------------------------------
-      # 4. Executa o script de ETL
-      #    As variáveis de ambiente recebem os valores dos Secrets do GitHub
-      #    O script lê essas variáveis via os.getenv() e cria o kaggle.json
-      # -----------------------------------------------------------------------
       - name: Executar ETL
         env:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
         run: python main_etl.py
 
-      # -----------------------------------------------------------------------
-      # 5. Faz upload do parquet como artefato do workflow
-      #    Isso substitui o commit do parquet no repositório:
-      #    - O arquivo fica disponível para download por 7 dias
-      #    - Não polui o histórico do Git com arquivos binários pesados
-      #    - Pode ser baixado manualmente ou consumido por outros workflows
-      # -----------------------------------------------------------------------
       - name: Salvar parquet como artefato
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4  # ← já estava ok
         with:
           name: base-consolidada-logistica
           path: base_consolidada_logistica.parquet
