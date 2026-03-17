@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from dotenv import load_dotenv
 from kaggle.api.kaggle_api_extended import KaggleApi
+from geopy.distance import geodesic
 
 # Carrega o .env primeiro
 load_dotenv()
@@ -182,6 +183,57 @@ def processar_base_mestre(path='./data'):
         how='left'
     )
     print(f"  Após merge + geo (customer):      {df.shape[0]} linhas")
+
+    # -------------------------------------------------------------------------
+    # Defining seller–customer distance (km)
+    # -------------------------------------------------------------------------
+    # Uses centroid lat/lng per zip prefix (aggregated from olist_geolocation_dataset).
+    # geodesic() computes surface distance between two lat/lng points.
+    # NOTE: coordinates are approximate (zip prefix centroid, not exact address).
+
+    def compute_distance_km(row):
+        if pd.isna(row["seller_geo_lat"]) or pd.isna(row["seller_geo_lng"]) \
+           or pd.isna(row["customer_geo_lat"]) or pd.isna(row["customer_geo_lng"]):
+            return pd.NA
+        try:
+            return geodesic(
+                (row["seller_geo_lat"],   row["seller_geo_lng"]),
+                (row["customer_geo_lat"], row["customer_geo_lng"])
+            ).km
+        except Exception:
+            return pd.NA
+
+    df["seller_customer_distance_km"] = df.apply(compute_distance_km, axis=1)
+    print(f"  Distance calculated. Missing: {df['seller_customer_distance_km'].isna().sum()} rows")
+
+    # -------------------------------------------------------------------------
+    # Drop geolocation columns
+    # -------------------------------------------------------------------------
+    # Geolocation lat/lng columns (seller and customer) were used solely to
+    # compute seller_customer_distance_km above. They are dropped here to keep
+    # the consolidated base lean and avoid leakage of raw coordinates into the
+    # model. Geography is represented by: customer_state, seller_state (already
+    # present) and seller_customer_distance_km (engineered above).
+    # Zip code prefix columns are also dropped as they are granular proxies of
+    # location already captured by state and distance features.
+
+    cols_to_drop = [
+        # Raw geolocation coordinates
+        "seller_geo_lat",
+        "seller_geo_lng",
+        "seller_geo_city",
+        "seller_geo_state",
+        "customer_geo_lat",
+        "customer_geo_lng",
+        "customer_geo_city",
+        "customer_geo_state",
+        # Zip code prefixes
+        "seller_zip_code_prefix",
+        "customer_zip_code_prefix",
+    ]
+    df.drop(columns=cols_to_drop, inplace=True)
+    print(f"  Dropped geolocation and zip code columns: {cols_to_drop}")
+
 
     # -------------------------------------------------------------------------
     # Date parsing
