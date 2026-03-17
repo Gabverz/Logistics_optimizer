@@ -6,19 +6,19 @@ from dotenv import load_dotenv
 from kaggle.api.kaggle_api_extended import KaggleApi
 from geopy.distance import geodesic
 
-# Carrega o .env primeiro
+# Load .env first
 load_dotenv()
 
 # =============================================================================
-# 1. AUTENTICAÇÃO
+# 1. AUTHENTICATION
 # =============================================================================
-def conectar_api():
+def connect_api():
     try:
         username = os.getenv('KAGGLE_USERNAME')
         key = os.getenv('KAGGLE_KEY')
 
-        # Se as variáveis de ambiente existirem, garante que o kaggle.json
-        # também existe (necessário em alguns ambientes Windows)
+        # If environment variables exist, ensure kaggle.json also exists
+        # (required in some Windows environments)
         if username and key:
             kaggle_dir = Path.home() / '.kaggle'
             kaggle_dir.mkdir(exist_ok=True)
@@ -27,49 +27,46 @@ def conectar_api():
             if not kaggle_json.exists():
                 with open(kaggle_json, 'w') as f:
                     json.dump({'username': username, 'key': key}, f)
-                print("kaggle.json criado automaticamente a partir do .env")
+                print("kaggle.json created automatically from .env")
 
         api = KaggleApi()
         api.authenticate()
-        print("Sucesso: Autenticação concluída!")
+        print("Success: Authentication completed!")
         return api
 
     except Exception as e:
-        print(f"Erro ao autenticar: {e}")
+        print(f"Authentication error: {e}")
         return None
 
 
 # =============================================================================
-# 2. EXTRAÇÃO (Extract)
+# 2. EXTRACTION (Extract)
 # =============================================================================
-def extrair_dados(api, path='./data'):
-    # Recebe api como parâmetro (sem depender de variável global)
+def extract_data(api, path='./data'):
     if api is None:
-        print("Erro: API não autenticada. Abortando extração.")
+        print("Error: API not authenticated. Aborting extraction.")
         return
 
-    # Cria o diretório se não existir
     if not os.path.exists(path):
         os.makedirs(path)
 
-    # Evita re-download se os dados já existem
+    # Skip download if data already exists locally
     csv_exemplo = f'{path}/olist_orders_dataset.csv'
     if os.path.exists(csv_exemplo):
-        print("Dados já existem localmente. Pulando download.")
+        print("Data already exists locally. Skipping download.")
         return
 
-    print("Baixando dados do Kaggle...")
+    print("Downloading data from Kaggle...")
     api.dataset_download_files('olistbr/brazilian-ecommerce', path=path, unzip=True)
-    print("Arquivos extraídos com sucesso.")
+    print("Files extracted successfully.")
 
 
 # =============================================================================
-# 3. TRANSFORMAÇÃO (Transform)
+# 3. TRANSFORMATION (Transform)
 # =============================================================================
-
-def processar_base_mestre(path='./data'):
+def process_master_base(path='./data'):
     # Load essential tables
-    print("Carregando CSVs...")
+    print("Loading CSVs...")
     orders      = pd.read_csv(f'{path}/olist_orders_dataset.csv')
     items       = pd.read_csv(f'{path}/olist_order_items_dataset.csv')
     reviews     = pd.read_csv(f'{path}/olist_order_reviews_dataset.csv')
@@ -79,14 +76,14 @@ def processar_base_mestre(path='./data'):
     payments    = pd.read_csv(f'{path}/olist_order_payments_dataset.csv')
     geolocation = pd.read_csv(f'{path}/olist_geolocation_dataset.csv')
 
-    print(f"  orders:      {orders.shape[0]} linhas")
-    print(f"  items:       {items.shape[0]} linhas")
-    print(f"  reviews:     {reviews.shape[0]} linhas")
-    print(f"  customers:   {customers.shape[0]} linhas")
-    print(f"  sellers:     {sellers.shape[0]} linhas")
-    print(f"  products:    {products.shape[0]} linhas")
-    print(f"  payments:    {payments.shape[0]} linhas")
-    print(f"  geolocation: {geolocation.shape[0]} linhas")
+    print(f"  orders:      {orders.shape[0]} rows")
+    print(f"  items:       {items.shape[0]} rows")
+    print(f"  reviews:     {reviews.shape[0]} rows")
+    print(f"  customers:   {customers.shape[0]} rows")
+    print(f"  sellers:     {sellers.shape[0]} rows")
+    print(f"  products:    {products.shape[0]} rows")
+    print(f"  payments:    {payments.shape[0]} rows")
+    print(f"  geolocation: {geolocation.shape[0]} rows")
 
     # -------------------------------------------------------------------------
     # Pre-processing: slim down tables before merging
@@ -129,13 +126,13 @@ def processar_base_mestre(path='./data'):
     # -------------------------------------------------------------------------
     # Merges
     # -------------------------------------------------------------------------
-    print("\nIniciando Merges...")
+    print("\nStarting merges...")
 
     df = pd.merge(orders, items, on='order_id', how='inner')
-    print(f"  Após merge orders + items:        {df.shape[0]} linhas")
+    print(f"  After merge orders + items:       {df.shape[0]} rows")
 
     df = pd.merge(df, customers, on='customer_id', how='inner')
-    print(f"  Após merge + customers:           {df.shape[0]} linhas")
+    print(f"  After merge + customers:          {df.shape[0]} rows")
 
     # Deduplicate reviews before merge to avoid row explosion
     reviews_dedup = (
@@ -143,16 +140,16 @@ def processar_base_mestre(path='./data'):
         .drop_duplicates(subset='order_id', keep='last')
     )
     df = pd.merge(df, reviews_dedup, on='order_id', how='left')
-    print(f"  Após merge + reviews:             {df.shape[0]} linhas")
+    print(f"  After merge + reviews:            {df.shape[0]} rows")
 
     df = pd.merge(df, sellers_slim, on='seller_id', how='left')
-    print(f"  Após merge + sellers:             {df.shape[0]} linhas")
+    print(f"  After merge + sellers:            {df.shape[0]} rows")
 
     df = pd.merge(df, products_slim, on='product_id', how='left')
-    print(f"  Após merge + products:            {df.shape[0]} linhas")
+    print(f"  After merge + products:           {df.shape[0]} rows")
 
     df = pd.merge(df, payments_agg, on='order_id', how='left')
-    print(f"  Após merge + payments:            {df.shape[0]} linhas")
+    print(f"  After merge + payments:           {df.shape[0]} rows")
 
     # Geolocation for seller zip prefix
     df = pd.merge(
@@ -167,7 +164,7 @@ def processar_base_mestre(path='./data'):
         on='seller_zip_code_prefix',
         how='left'
     )
-    print(f"  Após merge + geo (seller):        {df.shape[0]} linhas")
+    print(f"  After merge + geo (seller):       {df.shape[0]} rows")
 
     # Geolocation for customer zip prefix
     df = pd.merge(
@@ -182,10 +179,10 @@ def processar_base_mestre(path='./data'):
         on='customer_zip_code_prefix',
         how='left'
     )
-    print(f"  Após merge + geo (customer):      {df.shape[0]} linhas")
+    print(f"  After merge + geo (customer):     {df.shape[0]} rows")
 
     # -------------------------------------------------------------------------
-    # Defining seller–customer distance (km)
+    # Feature engineering: seller–customer distance (km)
     # -------------------------------------------------------------------------
     # Uses centroid lat/lng per zip prefix (aggregated from olist_geolocation_dataset).
     # geodesic() computes surface distance between two lat/lng points.
@@ -203,19 +200,16 @@ def processar_base_mestre(path='./data'):
         except Exception:
             return pd.NA
 
+    print("\nCalculating seller–customer distance (this may take a few seconds)...")
     df["seller_customer_distance_km"] = df.apply(compute_distance_km, axis=1)
     print(f"  Distance calculated. Missing: {df['seller_customer_distance_km'].isna().sum()} rows")
 
     # -------------------------------------------------------------------------
-    # Drop geolocation columns
+    # Drop raw geolocation coordinates and zip prefixes
     # -------------------------------------------------------------------------
-    # Geolocation lat/lng columns (seller and customer) were used solely to
-    # compute seller_customer_distance_km above. They are dropped here to keep
-    # the consolidated base lean and avoid leakage of raw coordinates into the
-    # model. Geography is represented by: customer_state, seller_state (already
-    # present) and seller_customer_distance_km (engineered above).
-    # Zip code prefix columns are also dropped as they are granular proxies of
-    # location already captured by state and distance features.
+    # Raw lat/lng columns were used solely to compute seller_customer_distance_km.
+    # Zip code prefixes are also removed to avoid overly granular location keys.
+    # City and state columns are kept as geographical features alongside distance.
 
     cols_to_drop = [
         # Raw geolocation coordinates
@@ -228,18 +222,17 @@ def processar_base_mestre(path='./data'):
         "customer_zip_code_prefix",
     ]
     df.drop(columns=cols_to_drop, inplace=True)
-    print(f"  Dropped geolocation and zip code columns: {cols_to_drop}")
-
+    print(f"  Dropped raw geolocation and zip code columns: {cols_to_drop}")
 
     # -------------------------------------------------------------------------
     # Date parsing
     # -------------------------------------------------------------------------
-    cols_data = [
+    date_cols = [
         'order_purchase_timestamp',
         'order_delivered_customer_date',
         'order_estimated_delivery_date'
     ]
-    for col in cols_data:
+    for col in date_cols:
         df[col] = pd.to_datetime(df[col])
 
     # -------------------------------------------------------------------------
@@ -291,27 +284,27 @@ def processar_base_mestre(path='./data'):
     else:
         print("\nAll expected columns present after merges.")
 
-    print(f"\nDataset consolidado com {df.shape[0]} linhas.")
-    print(f"  Pedidos atrasados:     {df['is_late'].sum()}")
-    print(f"  Pedidos no prazo:      {(df['is_late'] == 0).sum()}")
-    print(f"  Sem data de entrega:   {df['is_late'].isna().sum()}")
+    print(f"\nConsolidated dataset: {df.shape[0]} rows.")
+    print(f"  Late orders:          {df['is_late'].sum()}")
+    print(f"  On-time orders:       {(df['is_late'] == 0).sum()}")
+    print(f"  No delivery date:     {df['is_late'].isna().sum()}")
 
     return df
 
 
 # =============================================================================
-# 4. CARGA (Load)
+# 4. LOAD
 # =============================================================================
-def salvar_base(df, output_path='base_consolidada_logistica.parquet'):
+def save_base(df, output_path='base_consolidada_logistica.parquet'):
     df.to_parquet(output_path, index=False)
-    print(f"\nArquivo '{output_path}' gerado com sucesso.")
+    print(f"\nFile '{output_path}' saved successfully.")
 
 
 # =============================================================================
-# EXECUÇÃO PRINCIPAL
+# MAIN
 # =============================================================================
 if __name__ == '__main__':
-    api = conectar_api()
-    extrair_dados(api)
-    df_final = processar_base_mestre()
-    salvar_base(df_final)
+    api = connect_api()
+    extract_data(api)
+    df_final = process_master_base()
+    save_base(df_final)
