@@ -261,15 +261,57 @@ def process_master_base(path='./data'):
     print(f"  Product volume calculated. Missing: {df['product_volume_cm3'].isna().sum()} rows")
 
     # -------------------------------------------------------------------------
+    # Feature engineering: product volume (cm³)
+    # -------------------------------------------------------------------------
+    # Computed as length × height × width using product dimension columns.
+    # Raw dimension columns are dropped after volume computation; we keep:
+    # - product_weight_g (continuous)
+    # - product_volume_cm3 (continuous)
+    # - is_heavy_product (binary)
+    # - is_bulky_product (binary)
+
+    df["product_volume_cm3"] = (
+        df["product_length_cm"] *
+        df["product_height_cm"] *
+        df["product_width_cm"]
+    )
+    print(f"  Product volume calculated. Missing: {df['product_volume_cm3'].isna().sum()} rows")
+
+    # Heavy product flag: weight > 10kg
+    df["is_heavy_product"] = (df["product_weight_g"] > 10_000).astype("Int8")
+
+    # Bulky product flag: volume > 50k cm³
+    df["is_bulky_product"] = (df["product_volume_cm3"] > 50_000).astype("Int8")
+
+    print(
+        "  Heavy products (weight > 10kg): "
+        f"{df['is_heavy_product'].sum()} rows "
+        f"({df['is_heavy_product'].mean():.1%})"
+    )
+    print(
+        "  Bulky products (volume > 50k cm³): "
+        f"{df['is_bulky_product'].sum()} rows "
+        f"({df['is_bulky_product'].mean():.1%})"
+    )
+
+    # Drop raw dimension columns (length, height, width)
+    dims_to_drop = [
+        "product_length_cm",
+        "product_height_cm",
+        "product_width_cm",
+    ]
+    df.drop(columns=dims_to_drop, inplace=True)
+    print(f"  Dropped raw product dimensions: {dims_to_drop}")
+
+    # -------------------------------------------------------------------------
     # Validation: check expected columns are present after all merges
     # -------------------------------------------------------------------------
     expected_cols = [
         "product_category_name",
         "product_weight_g",
-        "product_length_cm",
-        "product_height_cm",
-        "product_width_cm",
         "product_volume_cm3",
+        "is_heavy_product",
+        "is_bulky_product",
         "payment_type_main",
         "seller_customer_distance_km",
         "seller_geo_city",
