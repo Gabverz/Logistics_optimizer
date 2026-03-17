@@ -255,6 +255,19 @@ def processar_base_mestre(path='./data'):
     df.loc[df['order_delivered_customer_date'].isna(), 'is_late'] = pd.NA
 
     # -------------------------------------------------------------------------
+    # Feature engineering: product volume (cm³)
+    # -------------------------------------------------------------------------
+    # Computed as length × height × width using product dimension columns.
+    # Raw dimension columns are kept as individual features alongside volume.
+
+    df["product_volume_cm3"] = (
+        df["product_length_cm"] *
+        df["product_height_cm"] *
+        df["product_width_cm"]
+    )
+    print(f"  Product volume calculated. Missing: {df['product_volume_cm3'].isna().sum()} rows")
+
+    # -------------------------------------------------------------------------
     # Validation: check expected columns are present after all merges
     # -------------------------------------------------------------------------
     expected_cols = [
@@ -263,6 +276,7 @@ def processar_base_mestre(path='./data'):
         "product_length_cm",
         "product_height_cm",
         "product_width_cm",
+        "product_volume_cm3",
         "payment_type_main",
         "seller_customer_distance_km",
         "seller_geo_city",
