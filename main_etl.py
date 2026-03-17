@@ -221,12 +221,8 @@ def processar_base_mestre(path='./data'):
         # Raw geolocation coordinates
         "seller_geo_lat",
         "seller_geo_lng",
-        "seller_geo_city",
-        "seller_geo_state",
         "customer_geo_lat",
         "customer_geo_lng",
-        "customer_geo_city",
-        "customer_geo_state",
         # Zip code prefixes
         "seller_zip_code_prefix",
         "customer_zip_code_prefix",
@@ -262,21 +258,17 @@ def processar_base_mestre(path='./data'):
     # Validation: check expected columns are present after all merges
     # -------------------------------------------------------------------------
     expected_cols = [
-        'seller_zip_code_prefix',
-        'product_category_name',
-        'product_weight_g',
-        'product_length_cm',
-        'product_height_cm',
-        'product_width_cm',
-        'payment_type_main',
-        'seller_geo_lat',
-        'seller_geo_lng',
-        'seller_geo_city',
-        'seller_geo_state',
-        'customer_geo_lat',
-        'customer_geo_lng',
-        'customer_geo_city',
-        'customer_geo_state',
+        "product_category_name",
+        "product_weight_g",
+        "product_length_cm",
+        "product_height_cm",
+        "product_width_cm",
+        "payment_type_main",
+        "seller_customer_distance_km",
+        "seller_geo_city",
+        "seller_geo_state",
+        "customer_geo_city",
+        "customer_geo_state",
     ]
 
     missing_cols = [c for c in expected_cols if c not in df.columns]
