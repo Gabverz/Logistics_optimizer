@@ -12,7 +12,7 @@ load_dotenv()
 # =============================================================================
 # 1. AUTHENTICATION
 # =============================================================================
-def connect_api():
+def connect_api() -> KaggleApi | None:
     try:
         username = os.getenv('KAGGLE_USERNAME')
         key = os.getenv('KAGGLE_KEY')
@@ -42,17 +42,16 @@ def connect_api():
 # =============================================================================
 # 2. EXTRACTION (Extract)
 # =============================================================================
-def extract_data(api, path='./data'):
+def extract_data(api: KaggleApi | None, path: str = './data') -> None:
     if api is None:
         print("Error: API not authenticated. Aborting extraction.")
         return
 
-    if not os.path.exists(path):
-        os.makedirs(path)
+    data_path = Path(path)
+    data_path.mkdir(parents=True, exist_ok=True)
 
-    # Skip download if data already exists locally
-    csv_exemplo = f'{path}/olist_orders_dataset.csv'
-    if os.path.exists(csv_exemplo):
+    sentinel = data_path / 'olist_orders_dataset.csv'
+    if sentinel.exists():
         print("Data already exists locally. Skipping download.")
         return
 
@@ -64,7 +63,7 @@ def extract_data(api, path='./data'):
 # =============================================================================
 # 3. TRANSFORMATION (Transform)
 # =============================================================================
-def process_master_base(path='./data'):
+def process_master_base(path: str = './data') -> pd.DataFrame:
     # Load essential tables
     print("Loading CSVs...")
     orders      = pd.read_csv(f'{path}/olist_orders_dataset.csv')
@@ -251,19 +250,6 @@ def process_master_base(path='./data'):
     # Feature engineering: product volume (cm³)
     # -------------------------------------------------------------------------
     # Computed as length × height × width using product dimension columns.
-    # Raw dimension columns are kept as individual features alongside volume.
-
-    df["product_volume_cm3"] = (
-        df["product_length_cm"] *
-        df["product_height_cm"] *
-        df["product_width_cm"]
-    )
-    print(f"  Product volume calculated. Missing: {df['product_volume_cm3'].isna().sum()} rows")
-
-    # -------------------------------------------------------------------------
-    # Feature engineering: product volume (cm³)
-    # -------------------------------------------------------------------------
-    # Computed as length × height × width using product dimension columns.
     # Raw dimension columns are dropped after volume computation; we keep:
     # - product_weight_g (continuous)
     # - product_volume_cm3 (continuous)
@@ -337,7 +323,7 @@ def process_master_base(path='./data'):
 # =============================================================================
 # 4. LOAD
 # =============================================================================
-def save_base(df, output_path='base_consolidada_logistica.parquet'):
+def save_base(df: pd.DataFrame, output_path: str = 'consolidated_logistics_base.parquet') -> None:
     df.to_parquet(output_path, index=False)
     print(f"\nFile '{output_path}' saved successfully.")
 
