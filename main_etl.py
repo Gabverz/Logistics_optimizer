@@ -5,6 +5,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 from kaggle.api.kaggle_api_extended import KaggleApi
 from geopy.distance import geodesic
+import torch
+from transformers import AutoTokenizer, AutoModel
+import numpy as np
+from sklearn.decomposition import TruncatedSVD
 
 # Load .env first
 load_dotenv()
@@ -319,7 +323,95 @@ def process_master_base(path: str = './data') -> pd.DataFrame:
 
     return df
 
+def generate_bert_features(
+    df: pd.DataFrame,
+    text_col: str = "review_comment_message",
+    n_components: int = 50,
+    batch_size: int = 64,
+    model_name: str = "neuralmind/bert-base-portuguese-cased",
+) -> pd.DataFrame:
+    """
+    Generate BERT [CLS] embeddings for text column and reduce dimensionality via SVD.
 
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input dataframe containing the text column.
+    text_col : str
+        Name of the column with review comments.
+    n_components : int
+        Number of SVD components to retain.
+    batch_size : int
+        Number of texts processed per BERT forward pass.
+    model_name : str
+        Pretrained BERT model identifier from HuggingFace.
+
+    Returns
+    -------
+    pd.DataFrame
+        Original dataframe with has_comment flag and bert_svd_* columns appended.
+    """
+    ...
+
+    # Binary flag: 1 if order has a review comment, 0 otherwise
+    df["has_comment"] = df[text_col].notna().astype("Int8")
+
+    # Load tokenizer and model
+    print(f"Loading BERT model: {model_name}...")
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModel.from_pretrained(model_name)
+    model.eval()
+    print("Model loaded successfully.")
+
+        # Flatten all texts; empty string replaces NaN so tokenizer never receives None
+    texts = df[text_col].fillna("").tolist()
+    embeddings = []
+
+    print("Extracting BERT embeddings...")
+
+    # Disable gradient computation — inference only, no backpropagation needed
+    with torch.no_grad():
+
+        # Iterate over texts in chunks of batch_size (default: 64)
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
+
+            # Tokenize batch: pad sequences to same length, truncate at 512 tokens
+            # return_tensors="pt" returns PyTorch tensors
+            encoded = tokenizer(
+                batch,
+                padding=True,
+                truncation=True,
+                max_length=512,
+                return_tensors="pt"
+            )
+
+            # Forward pass through BERT
+            output = model(**encoded)
+
+            # Extract [CLS] token (position 0) from each sequence — shape: (batch_size, 768)
+            cls_vectors = output.last_hidden_state[:, 0, :]
+
+            # Convert tensor to NumPy and store
+            embeddings.append(cls_vectors.numpy())
+
+    print(f"Embeddings extracted: {len(texts)} texts processed.")
+
+    # Stack all batch arrays into a single matrix — shape: (n_rows, 768)
+    embeddings_matrix = np.vstack(embeddings)
+
+    # Reduce 768 dimensions to n_components (default: 50) via Truncated SVD
+    print(f"Applying SVD: 768 → {n_components} components...")
+    svd = TruncatedSVD(n_components=n_components, random_state=42)
+    embeddings_reduced = svd.fit_transform(embeddings_matrix)
+
+    # Create one column per SVD component and attach to dataframe
+    svd_cols = [f"bert_svd_{i}" for i in range(n_components)]
+    df[svd_cols] = embeddings_reduced
+
+    print(f"SVD complete. Columns added: bert_svd_0 … bert_svd_{n_components - 1}")
+
+    return df
 # =============================================================================
 # 4. LOAD
 # =============================================================================
