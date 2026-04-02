@@ -9,6 +9,7 @@ import torch
 from transformers import AutoTokenizer, AutoModel
 import numpy as np
 from sklearn.decomposition import TruncatedSVD
+import tracemalloc
 
 # Load .env first
 load_dotenv()
@@ -412,8 +413,98 @@ def generate_bert_features(
     print(f"SVD complete. Columns added: bert_svd_0 … bert_svd_{n_components - 1}")
 
     return df
+
 # =============================================================================
-# 4. LOAD
+# 4. TEST END VALIDATION OF BERT EMBEDDING
+# =============================================================================
+
+def test_bert_inference() -> None:
+    """
+    Layer 1 - Smoke test: verify BERT model loads and runs inference
+    on a single sentence before touching the dataset.
+    Aborts early if the model or tokenizer fails to load.
+    """
+
+    print("Layer 1: Testing BERT model loading and inference...")
+
+    # Load tokenizer and model using Portuguese BERT
+    tokenizer = AutoTokenizer.from_pretrained("neuralmind/bert-base-portuguese-cased")
+    model = AutoModel.from_pretrained("neuralmind/bert-base-portuguese-cased")
+    model.eval()
+
+    # Single hardcoded sentence simulating a review comment
+    sample_text = ["Produto entregue com atraso e embalagem danificada."]
+
+    # Tokenize and run forward pass without computing gradients
+    encoded = tokenizer(sample_text, return_tensors="pt", truncation=True, max_length=512)
+    with torch.no_grad():
+        output = model(**encoded)
+
+    # Extract CLS token vector — expected shape: (1, 768)
+    cls_vector = output.last_hidden_state[:, 0, :]
+    assert cls_vector.shape == (1, 768), f"Unexpected CLS shape: {cls_vector.shape}"
+
+    print(f"Layer 1 passed. CLS vector shape: {cls_vector.shape}\n")
+
+
+def test_generate_bert_features(df: pd.DataFrame, sample_size: int = 100) -> None:
+    """
+    Layer 2 - Memory test: run generate_bert_features on a small sample
+    and monitor peak memory usage via tracemalloc.
+    Validates that the function produces exactly 50 SVD columns with no NaN.
+    Aborts early if memory usage is unexpectedly high.
+    """
+
+    print(f"Layer 2: Running generate_bert_features on {sample_size} rows...")
+
+    # Use a small sample to keep memory usage low during the test
+    sample = df.head(sample_size).copy()
+
+    # Start memory tracing before running the function
+    tracemalloc.start()
+    result = generate_bert_features(sample)
+    current, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    # Validate that exactly 50 SVD columns were created
+    svd_cols = [c for c in result.columns if c.startswith("bert_svd_")]
+    assert len(svd_cols) == 50, f"Expected 50 SVD columns, got {len(svd_cols)}"
+
+    # Validate that no NaN values exist in SVD columns
+    nan_count = result[svd_cols].isnull().sum().sum()
+    assert nan_count == 0, f"NaN values found in SVD columns: {nan_count}"
+
+    print(f"Layer 2 passed.")
+    print(f"  Peak memory: {peak / 1e6:.2f} MB")
+    print(f"  Output shape: {result.shape}\n")
+
+
+def validate_bert_features(df: pd.DataFrame, n_components: int = 50) -> None:
+    """
+    Layer 3 - Final validation: after generate_bert_features runs on the full
+    dataset, verify column completeness, NaN absence, and report memory usage.
+    This is the last checkpoint before saving the base.
+    """
+
+    print("Layer 3: Validating BERT SVD columns on full dataset...")
+
+    # Build expected column names and check for missing ones
+    svd_cols = [f"bert_svd_{i}" for i in range(n_components)]
+    missing = [c for c in svd_cols if c not in df.columns]
+    assert not missing, f"Missing SVD columns: {missing}"
+
+    # Check for any remaining NaN values across all SVD columns
+    nan_count = df[svd_cols].isnull().sum().sum()
+    assert nan_count == 0, f"NaN values found: {nan_count}"
+
+    # Report memory footprint of SVD columns alone
+    mem_mb = df[svd_cols].memory_usage(deep=True).sum() / 1024 ** 2
+    print(f"Layer 3 passed.")
+    print(f"  SVD columns memory usage: {mem_mb:.2f} MB")
+    print(f"  Full dataframe shape: {df.shape}\n")
+
+# =============================================================================
+# 5. LOAD
 # =============================================================================
 def save_base(df: pd.DataFrame, output_path: str = 'consolidated_logistics_base.parquet') -> None:
     df.to_parquet(output_path, index=False)
@@ -423,9 +514,25 @@ def save_base(df: pd.DataFrame, output_path: str = 'consolidated_logistics_base.
 # =============================================================================
 # MAIN
 # =============================================================================
-if __name__ == '__main__':
+
+# Layer 1: verify BERT loads and infers before touching any data
+    test_bert_inference()
+
+    # Connect to API and extract raw data
     api = connect_api()
     extract_data(api)
+
+    # Build master base
     df_final = process_master_base()
+
+    # Layer 2: smoke test with small sample before full BERT run
+    test_generate_bert_features(df_final)
+
+    # Run BERT on full dataset
     df_final = generate_bert_features(df_final)
+
+    # Layer 3: validate output before saving
+    validate_bert_features(df_final)
+
+    # Persist final base
     save_base(df_final)
