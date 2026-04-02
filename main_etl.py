@@ -515,7 +515,9 @@ def save_base(df: pd.DataFrame, output_path: str = 'consolidated_logistics_base.
 # MAIN
 # =============================================================================
 
-# Layer 1: verify BERT loads and infers before touching any data
+if __name__ == '__main__':
+
+    # Layer 1: verify BERT loads and infers before touching any data
     test_bert_inference()
 
     # Connect to API and extract raw data
