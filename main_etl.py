@@ -427,4 +427,5 @@ if __name__ == '__main__':
     api = connect_api()
     extract_data(api)
     df_final = process_master_base()
+    df_final = generate_bert_features(df_final)
     save_base(df_final)
