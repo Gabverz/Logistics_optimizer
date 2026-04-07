@@ -503,6 +503,119 @@ def validate_bert_features(df: pd.DataFrame, n_components: int = 50) -> None:
     print(f"  SVD columns memory usage: {mem_mb:.2f} MB")
     print(f"  Full dataframe shape: {df.shape}\n")
 
+def select_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Selects and prepares features for model training.
+
+    Steps
+    -----
+    1. Extract day-of-week from estimated delivery date before dropping timestamps.
+    2. Drop columns that have already been transformed, carry no predictive value,
+       or introduce target leakage.
+    3. Filter rows where is_late is NaN (orders without a confirmed delivery date
+       are not classifiable and would introduce noise into training).
+
+    Column drop rationale
+    ---------------------
+    Identifiers (no predictive signal):
+    - order_id             : unique key.
+    - customer_id          : unique key.
+    - customer_unique_id   : redundant customer identifier.
+    - product_id           : unique key; category and dimensions already encoded.
+    - order_item_id        : sequential per order; no predictive signal.
+
+    Timestamps (replaced or irrelevant):
+    - order_purchase_timestamp       : raw timestamp; not used downstream.
+    - order_approved_at              : intermediate timestamp; no predictive value.
+    - order_delivered_carrier_date   : intermediate timestamp; potential leakage
+                                       (known only after shipping starts).
+    - order_delivered_customer_date  : used only to compute is_late; leaks target.
+    - order_estimated_delivery_date  : replaced by estimated_delivery_dow.
+    - shipping_limit_date            : intermediate timestamp; already captured
+                                       indirectly by distance and category.
+
+    Redundant columns:
+    - order_status         : redundant after filtering by is_late.
+    - customer_city        : redundant with customer_geo_city.
+    - price                : replaced by price_bin.
+    - freight_value        : replaced by freight_bin.
+    - review_comment_message: raw text already encoded into bert_svd_* columns.
+
+    Target leakage:
+    - actual_delivery_days   : computed from order_delivered_customer_date;
+                               directly leaks the target.
+    - delay_vs_estimated_days: directly derived from is_late; severe leakage.
+
+    Feature engineering
+    -------------------
+    - estimated_delivery_dow: day of week (0=Monday, 6=Sunday) extracted from
+      order_estimated_delivery_date. Integer encoding is preferred over string
+      labels to minimize memory usage and avoid additional encoding before
+      model training.
+
+    Returns
+    -------
+    pd.DataFrame
+        Cleaned dataframe ready for model training, with is_late as target.
+    """
+
+    # -------------------------------------------------------------------------
+    # Step 1: extract day-of-week before dropping the timestamp
+    # -------------------------------------------------------------------------
+    # Integer (0–6) is used instead of string to save memory and remain
+    # directly usable by tree-based models without further encoding.
+    df["estimated_delivery_dow"] = (
+        df["order_estimated_delivery_date"].dt.dayofweek
+    )
+
+    # -------------------------------------------------------------------------
+    # Step 2: drop columns that served their purpose or carry no signal
+    # -------------------------------------------------------------------------
+    cols_to_drop = [
+        # Identifiers
+        "order_id",
+        "customer_id",
+        "customer_unique_id",
+        "product_id",
+        "order_item_id",
+        # Timestamps
+        "order_purchase_timestamp",
+        "order_approved_at",
+        "order_delivered_carrier_date",
+        "order_delivered_customer_date",
+        "order_estimated_delivery_date",
+        "shipping_limit_date",
+        # Redundant
+        "order_status",
+        "customer_city",
+        "price",
+        "freight_value",
+        "review_comment_message",
+        # Target leakage
+        "actual_delivery_days",
+        "delay_vs_estimated_days",
+    ]
+
+    # Drop only columns that actually exist to avoid KeyError
+    cols_to_drop = [c for c in cols_to_drop if c in df.columns]
+    df.drop(columns=cols_to_drop, inplace=True)
+    print(f"  Columns dropped: {cols_to_drop}")
+
+    # -------------------------------------------------------------------------
+    # Step 3: filter out rows where is_late is NaN
+    # -------------------------------------------------------------------------
+    # NaN in is_late means the order has no confirmed delivery date and cannot
+    # be classified as late or on-time. Keeping these rows would introduce
+    # label noise and corrupt model evaluation metrics.
+    before = len(df)
+    df = df[df["is_late"].notna()].reset_index(drop=True)
+    after = len(df)
+    print(f"  Rows removed (is_late NaN): {before - after}")
+    print(f"  Rows remaining:             {after}")
+    print(f"  Final shape:                {df.shape}")
+
+    return df
+
 # =============================================================================
 # 5. LOAD
 # =============================================================================
@@ -535,6 +648,11 @@ if __name__ == '__main__':
 
     # Layer 3: validate output before saving
     validate_bert_features(df_final)
+
+    # Select features (defined after EDA and feature engineering)
+    print("\nSelecting features...")
+    df_final = select_features(df_final)
+    print("Feature selection complete.\n")
 
     # Persist final base
     save_base(df_final)
