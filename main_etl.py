@@ -579,12 +579,9 @@ def select_features(df: pd.DataFrame) -> pd.DataFrame:
         "product_id",
         "order_item_id",
         # Timestamps
-        "order_purchase_timestamp",
         "order_approved_at",
         "order_delivered_carrier_date",
         "order_delivered_customer_date",
-        "order_estimated_delivery_date",
-        "shipping_limit_date",
         # Redundant
         "order_status",
         "customer_city",
