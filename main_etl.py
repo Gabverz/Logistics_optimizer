@@ -583,7 +583,6 @@ def select_features(df: pd.DataFrame) -> pd.DataFrame:
         # Timestamps
         "order_approved_at",
         "order_delivered_carrier_date",
-        "order_delivered_customer_date",
         # Redundant
         "order_status",
         "customer_city",
