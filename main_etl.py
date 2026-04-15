@@ -567,7 +567,9 @@ def select_features(df: pd.DataFrame) -> pd.DataFrame:
     df["estimated_delivery_dow"] = (
         df["order_estimated_delivery_date"].dt.dayofweek
     )
-
+    df["delay_days"] = (
+        df["order_delivered_customer_date"] - df["order_estimated_delivery_date"]
+    ).dt.days.clip(lower=0)
     # -------------------------------------------------------------------------
     # Step 2: drop columns that served their purpose or carry no signal
     # -------------------------------------------------------------------------
@@ -636,15 +638,6 @@ if __name__ == '__main__':
 
     # Build master base
     df_final = process_master_base()
-
-    # Layer 2: smoke test with small sample before full BERT run
-    test_generate_bert_features(df_final)
-
-    # Run BERT on full dataset
-    df_final = generate_bert_features(df_final)
-
-    # Layer 3: validate output before saving
-    validate_bert_features(df_final)
 
     # Select features (defined after EDA and feature engineering)
     print("\nSelecting features...")
